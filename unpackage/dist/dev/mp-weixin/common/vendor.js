@@ -88,37 +88,6 @@ const looseToNumber = (val) => {
   const n2 = parseFloat(val);
   return isNaN(n2) ? val : n2;
 };
-const toDisplayString = (val) => {
-  return isString(val) ? val : val == null ? "" : isArray(val) || isObject(val) && (val.toString === objectToString || !isFunction(val.toString)) ? JSON.stringify(val, replacer, 2) : String(val);
-};
-const replacer = (_key, val) => {
-  if (val && val.__v_isRef) {
-    return replacer(_key, val.value);
-  } else if (isMap(val)) {
-    return {
-      [`Map(${val.size})`]: [...val.entries()].reduce(
-        (entries, [key, val2], i) => {
-          entries[stringifySymbol(key, i) + " =>"] = val2;
-          return entries;
-        },
-        {}
-      )
-    };
-  } else if (isSet(val)) {
-    return {
-      [`Set(${val.size})`]: [...val.values()].map((v) => stringifySymbol(v))
-    };
-  } else if (isSymbol(val)) {
-    return stringifySymbol(val);
-  } else if (isObject(val) && !isArray(val) && !isPlainObject(val)) {
-    return String(val);
-  }
-  return val;
-};
-const stringifySymbol = (v, i = "") => {
-  var _a;
-  return isSymbol(v) ? `Symbol(${(_a = v.description) != null ? _a : i})` : v;
-};
 const LOCALE_ZH_HANS = "zh-Hans";
 const LOCALE_ZH_HANT = "zh-Hant";
 const LOCALE_EN = "en";
@@ -364,8 +333,8 @@ const E = function() {
 E.prototype = {
   _id: 1,
   on: function(name, callback, ctx) {
-    var e2 = this.e || (this.e = {});
-    (e2[name] || (e2[name] = [])).push({
+    var e = this.e || (this.e = {});
+    (e[name] || (e[name] = [])).push({
       fn: callback,
       ctx,
       _id: this._id
@@ -392,8 +361,8 @@ E.prototype = {
     return this;
   },
   off: function(name, event) {
-    var e2 = this.e || (this.e = {});
-    var evts = e2[name];
+    var e = this.e || (this.e = {});
+    var evts = e[name];
     var liveEvents = [];
     if (evts && event) {
       for (var i = evts.length - 1; i >= 0; i--) {
@@ -404,7 +373,7 @@ E.prototype = {
       }
       liveEvents = evts;
     }
-    liveEvents.length ? e2[name] = liveEvents : delete e2[name];
+    liveEvents.length ? e[name] = liveEvents : delete e[name];
     return this;
   }
 };
@@ -1293,9 +1262,6 @@ function isReadonly(value) {
 function isShallow(value) {
   return !!(value && value["__v_isShallow"]);
 }
-function isProxy(value) {
-  return isReactive(value) || isReadonly(value);
-}
 function toRaw(observed) {
   const raw = observed && observed["__v_raw"];
   return raw ? toRaw(raw) : observed;
@@ -2086,47 +2052,6 @@ function setCurrentRenderingInstance(instance2) {
   currentRenderingInstance = instance2;
   instance2 && instance2.type.__scopeId || null;
   return prev;
-}
-const COMPONENTS = "components";
-function resolveComponent(name, maybeSelfReference) {
-  return resolveAsset(COMPONENTS, name, true, maybeSelfReference) || name;
-}
-function resolveAsset(type, name, warnMissing = true, maybeSelfReference = false) {
-  const instance2 = currentRenderingInstance || currentInstance;
-  if (instance2) {
-    const Component2 = instance2.type;
-    if (type === COMPONENTS) {
-      const selfName = getComponentName(
-        Component2,
-        false
-      );
-      if (selfName && (selfName === name || selfName === camelize(name) || selfName === capitalize(camelize(name)))) {
-        return Component2;
-      }
-    }
-    const res = (
-      // local registration
-      // check instance[type] first which is resolved for options API
-      resolve(instance2[type] || Component2[type], name) || // global registration
-      resolve(instance2.appContext[type], name)
-    );
-    if (!res && maybeSelfReference) {
-      return Component2;
-    }
-    if (warnMissing && !res) {
-      const extra = type === COMPONENTS ? `
-If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement.` : ``;
-      warn$1(`Failed to resolve ${type.slice(0, -1)}: ${name}${extra}`);
-    }
-    return res;
-  } else {
-    warn$1(
-      `resolve${capitalize(type.slice(0, -1))} can only be used in render() or setup().`
-    );
-  }
-}
-function resolve(registry2, name) {
-  return registry2 && (registry2[name] || registry2[camelize(name)] || registry2[capitalize(camelize(name))]);
 }
 const INITIAL_WATCHER_VALUE = {};
 function watch(source, cb, options) {
@@ -3760,12 +3685,6 @@ const Static = Symbol.for("v-stc");
 function isVNode(value) {
   return value ? value.__v_isVNode === true : false;
 }
-const InternalObjectKey = `__vInternal`;
-function guardReactiveProps(props) {
-  if (!props)
-    return null;
-  return isProxy(props) || InternalObjectKey in props ? extend({}, props) : props;
-}
 const emptyAppContext = createAppContext();
 let uid = 0;
 function createComponentInstance(vnode, parent, suspense) {
@@ -5023,11 +4942,6 @@ function initApp(app) {
   }
 }
 const propsCaches = /* @__PURE__ */ Object.create(null);
-function renderProps(props) {
-  const { uid: uid2, __counter } = getCurrentInstance();
-  const propsId = (propsCaches[uid2] || (propsCaches[uid2] = [])).push(guardReactiveProps(props)) - 1;
-  return uid2 + "," + propsId + "," + __counter;
-}
 function pruneComponentPropsCache(uid2) {
   delete propsCaches[uid2];
 }
@@ -5068,104 +4982,6 @@ function getCreateApp() {
     return my[method];
   }
 }
-function vOn(value, key) {
-  const instance2 = getCurrentInstance();
-  const ctx = instance2.ctx;
-  const extraKey = typeof key !== "undefined" && (ctx.$mpPlatform === "mp-weixin" || ctx.$mpPlatform === "mp-qq" || ctx.$mpPlatform === "mp-xhs") && (isString(key) || typeof key === "number") ? "_" + key : "";
-  const name = "e" + instance2.$ei++ + extraKey;
-  const mpInstance = ctx.$scope;
-  if (!value) {
-    delete mpInstance[name];
-    return name;
-  }
-  const existingInvoker = mpInstance[name];
-  if (existingInvoker) {
-    existingInvoker.value = value;
-  } else {
-    mpInstance[name] = createInvoker(value, instance2);
-  }
-  return name;
-}
-function createInvoker(initialValue, instance2) {
-  const invoker = (e2) => {
-    patchMPEvent(e2);
-    let args = [e2];
-    if (instance2 && instance2.ctx.$getTriggerEventDetail) {
-      if (typeof e2.detail === "number") {
-        e2.detail = instance2.ctx.$getTriggerEventDetail(e2.detail);
-      }
-    }
-    if (e2.detail && e2.detail.__args__) {
-      args = e2.detail.__args__;
-    }
-    const eventValue = invoker.value;
-    const invoke = () => callWithAsyncErrorHandling(patchStopImmediatePropagation(e2, eventValue), instance2, 5, args);
-    const eventTarget = e2.target;
-    const eventSync = eventTarget ? eventTarget.dataset ? String(eventTarget.dataset.eventsync) === "true" : false : false;
-    if (bubbles.includes(e2.type) && !eventSync) {
-      setTimeout(invoke);
-    } else {
-      const res = invoke();
-      if (e2.type === "input" && (isArray(res) || isPromise(res))) {
-        return;
-      }
-      return res;
-    }
-  };
-  invoker.value = initialValue;
-  return invoker;
-}
-const bubbles = [
-  // touch事件暂不做延迟，否则在 Android 上会影响性能，比如一些拖拽跟手手势等
-  // 'touchstart',
-  // 'touchmove',
-  // 'touchcancel',
-  // 'touchend',
-  "tap",
-  "longpress",
-  "longtap",
-  "transitionend",
-  "animationstart",
-  "animationiteration",
-  "animationend",
-  "touchforcechange"
-];
-function patchMPEvent(event, instance2) {
-  if (event.type && event.target) {
-    event.preventDefault = NOOP;
-    event.stopPropagation = NOOP;
-    event.stopImmediatePropagation = NOOP;
-    if (!hasOwn(event, "detail")) {
-      event.detail = {};
-    }
-    if (hasOwn(event, "markerId")) {
-      event.detail = typeof event.detail === "object" ? event.detail : {};
-      event.detail.markerId = event.markerId;
-    }
-    if (isPlainObject(event.detail) && hasOwn(event.detail, "checked") && !hasOwn(event.detail, "value")) {
-      event.detail.value = event.detail.checked;
-    }
-    if (isPlainObject(event.detail)) {
-      event.target = extend({}, event.target, event.detail);
-    }
-  }
-}
-function patchStopImmediatePropagation(e2, value) {
-  if (isArray(value)) {
-    const originalStop = e2.stopImmediatePropagation;
-    e2.stopImmediatePropagation = () => {
-      originalStop && originalStop.call(e2);
-      e2._stopped = true;
-    };
-    return value.map((fn) => (e3) => !e3._stopped && fn(e3));
-  } else {
-    return value;
-  }
-}
-const o = (value, key) => vOn(value, key);
-const e = (target, ...sources) => extend(target, ...sources);
-const t = (val) => toDisplayString(val);
-const p = (props) => renderProps(props);
 function createApp$1(rootComponent, rootProps = null) {
   rootComponent && (rootComponent.mpType = "app");
   return createVueApp(rootComponent, rootProps).use(plugin);
@@ -5246,9 +5062,9 @@ function assertType(value, type) {
   let valid;
   const expectedType = getType(type);
   if (isSimpleType(expectedType)) {
-    const t2 = typeof value;
-    valid = t2 === expectedType.toLowerCase();
-    if (!valid && t2 === "object") {
+    const t = typeof value;
+    valid = t === expectedType.toLowerCase();
+    if (!valid && t === "object") {
       valid = value instanceof type;
     }
   } else if (expectedType === "Object") {
@@ -5304,8 +5120,8 @@ function tryCatch(fn) {
   return function() {
     try {
       return fn.apply(fn, arguments);
-    } catch (e2) {
-      console.error(e2);
+    } catch (e) {
+      console.error(e);
     }
   };
 }
@@ -5487,8 +5303,8 @@ function promisify$1(name, fn) {
     if (hasCallback(args)) {
       return wrapperReturnValue(name, invokeApi(name, fn, extend({}, args), rest));
     }
-    return wrapperReturnValue(name, handlePromise(new Promise((resolve2, reject) => {
-      invokeApi(name, fn, extend({}, args, { success: resolve2, fail: reject }), rest);
+    return wrapperReturnValue(name, handlePromise(new Promise((resolve, reject) => {
+      invokeApi(name, fn, extend({}, args, { success: resolve, fail: reject }), rest);
     })));
   };
 }
@@ -5769,7 +5585,7 @@ let enabled;
 function normalizePushMessage(message) {
   try {
     return JSON.parse(message);
-  } catch (e2) {
+  } catch (e) {
   }
   return message;
 }
@@ -5809,7 +5625,7 @@ function invokeGetPushCidCallbacks(cid2, errMsg) {
   getPushCidCallbacks.length = 0;
 }
 const API_GET_PUSH_CLIENT_ID = "getPushClientId";
-const getPushClientId$1 = defineAsyncApi(API_GET_PUSH_CLIENT_ID, (_, { resolve: resolve2, reject }) => {
+const getPushClientId$1 = defineAsyncApi(API_GET_PUSH_CLIENT_ID, (_, { resolve, reject }) => {
   Promise.resolve().then(() => {
     if (typeof enabled === "undefined") {
       enabled = false;
@@ -5818,7 +5634,7 @@ const getPushClientId$1 = defineAsyncApi(API_GET_PUSH_CLIENT_ID, (_, { resolve: 
     }
     getPushCidCallbacks.push((cid2, errMsg) => {
       if (cid2) {
-        resolve2({ cid: cid2 });
+        resolve({ cid: cid2 });
       } else {
         reject(errMsg);
       }
@@ -5887,9 +5703,9 @@ function promisify(name, api) {
     if (isFunction(options.success) || isFunction(options.fail) || isFunction(options.complete)) {
       return wrapperReturnValue(name, invokeApi(name, api, extend({}, options), rest));
     }
-    return wrapperReturnValue(name, handlePromise(new Promise((resolve2, reject) => {
+    return wrapperReturnValue(name, handlePromise(new Promise((resolve, reject) => {
       invokeApi(name, api, extend({}, options, {
-        success: resolve2,
+        success: resolve,
         fail: reject
       }), rest);
     })));
@@ -6552,13 +6368,13 @@ function initRuntimeSocket(hosts, port, id) {
 }
 const SOCKET_TIMEOUT = 500;
 function tryConnectSocket(host2, port, id) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve, reject) => {
     const socket = index.connectSocket({
       url: `ws://${host2}:${port}/${id}`,
       multiple: true,
       // 支付宝小程序 是否开启多实例
       fail() {
-        resolve2(null);
+        resolve(null);
       }
     });
     const timer = setTimeout(() => {
@@ -6566,19 +6382,19 @@ function tryConnectSocket(host2, port, id) {
         code: 1006,
         reason: "connect timeout"
       });
-      resolve2(null);
+      resolve(null);
     }, SOCKET_TIMEOUT);
-    socket.onOpen((e2) => {
+    socket.onOpen((e) => {
       clearTimeout(timer);
-      resolve2(socket);
+      resolve(socket);
     });
-    socket.onClose((e2) => {
+    socket.onClose((e) => {
       clearTimeout(timer);
-      resolve2(null);
+      resolve(null);
     });
-    socket.onError((e2) => {
+    socket.onError((e) => {
       clearTimeout(timer);
-      resolve2(null);
+      resolve(null);
     });
     socket.onMessage((result) => {
       const message = JSON.parse(result.data);
@@ -6594,7 +6410,7 @@ function tryConnectSocket(host2, port, id) {
           });
         });
       }
-      resolve2(null);
+      resolve(null);
     });
   });
 }
@@ -6693,7 +6509,7 @@ function formatMessage(type, args) {
       type,
       args: formatArgs(args)
     };
-  } catch (e2) {
+  } catch (e) {
   }
   return {
     type,
@@ -6721,7 +6537,7 @@ function formatArg(arg, depth = 0) {
     case "object":
       try {
         return formatObject(arg, depth);
-      } catch (e2) {
+      } catch (e) {
         return {
           type: "object",
           value: {
@@ -7061,9 +6877,9 @@ function isConsoleWritable() {
   return isWritable;
 }
 function initRuntimeSocketService() {
-  const hosts = "192.168.2.15,127.0.0.1";
+  const hosts = "192.168.43.94,127.0.0.1";
   const port = "8090";
-  const id = "mp-weixin_I2NcXD";
+  const id = "mp-weixin_iRksbB";
   const lazy = typeof swan !== "undefined";
   let restoreError = lazy ? () => {
   } : initOnError();
@@ -8034,34 +7850,34 @@ function toIey(input) {
 }
 function __awaiter(thisArg, _arguments, P, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve2) {
-      resolve2(value);
+    return value instanceof P ? value : new P(function(resolve) {
+      resolve(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve2, reject) {
+  return new (P || (P = Promise))(function(resolve, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
-      } catch (e2) {
-        reject(e2);
+      } catch (e) {
+        reject(e);
       }
     }
     function rejected(value) {
       try {
         step(generator["throw"](value));
-      } catch (e2) {
-        reject(e2);
+      } catch (e) {
+        reject(e);
       }
     }
     function step(result) {
-      result.done ? resolve2(result.value) : adopt(result.value).then(fulfilled, rejected);
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
     }
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
 }
 typeof SuppressedError === "function" ? SuppressedError : function(error, suppressed, message) {
-  var e2 = new Error(message);
-  return e2.name = "SuppressedError", e2.error = error, e2.suppressed = suppressed, e2;
+  var e = new Error(message);
+  return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 };
 const DEFAULT_MAX_LENGTH = 4096;
 const TRUNCATED_SUFFIX = "…[truncated]";
@@ -8087,8 +7903,8 @@ function safeStringify(value, max = DEFAULT_MAX_LENGTH) {
           return `[Function ${val.name || "anonymous"}]`;
         return val;
       })) !== null && _a !== void 0 ? _a : "";
-    } catch (e2) {
-      raw = `[Unserializable: ${e2.message}]`;
+    } catch (e) {
+      raw = `[Unserializable: ${e.message}]`;
     }
   }
   if (raw.length > max) {
@@ -8112,8 +7928,8 @@ function withRetry(fn, opts) {
     for (let attempt = 1; attempt <= total; attempt++) {
       try {
         return yield fn();
-      } catch (e2) {
-        lastErr = e2;
+      } catch (e) {
+        lastErr = e;
         if (attempt >= total)
           break;
         yield sleep(opts.baseDelayMs * Math.pow(2, attempt - 1));
@@ -8123,7 +7939,7 @@ function withRetry(fn, opts) {
   });
 }
 function defaultSleep(ms) {
-  return new Promise((resolve2) => setTimeout(resolve2, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function isUsableUniRuntime(candidate) {
   if (candidate == null || typeof candidate !== "object")
@@ -8271,8 +8087,8 @@ function isAndroidOrIosRuntime() {
   }
   if (raw.startsWith("mp-")) {
     try {
-      const p2 = (_h = (_g = (_f = (_e = g.uni) === null || _e === void 0 ? void 0 : _e.getSystemInfoSync) === null || _f === void 0 ? void 0 : _f.call(_e)) === null || _g === void 0 ? void 0 : _g.platform) === null || _h === void 0 ? void 0 : _h.toLowerCase();
-      return p2 === "android" || p2 === "ios";
+      const p = (_h = (_g = (_f = (_e = g.uni) === null || _e === void 0 ? void 0 : _e.getSystemInfoSync) === null || _f === void 0 ? void 0 : _f.call(_e)) === null || _g === void 0 ? void 0 : _g.platform) === null || _h === void 0 ? void 0 : _h.toLowerCase();
+      return p === "android" || p === "ios";
     } catch (_j) {
       return false;
     }
@@ -8706,7 +8522,7 @@ function getVue3TitleMap() {
     return titleMapCache;
   titleMapCache = {};
   try {
-    const raw = '{"pages/index/index":"uni-app"}';
+    const raw = "{}";
     if (typeof raw !== "string" || !raw)
       ;
     const parsed = JSON.parse(raw);
@@ -9096,10 +8912,10 @@ function createNew(now, sct, scene) {
   cached$2 = next;
   return next;
 }
-function ensureSession(t2, ctx) {
+function ensureSession(t, ctx) {
   const { now, scene = "" } = ctx;
   const snap = ensureCache();
-  if (t2 === "cold_launch") {
+  if (t === "cold_launch") {
     const created = createNew(now, CST.ColdLaunch, scene);
     return { snapshot: created, isNew: true, cst: CST.ColdLaunch };
   }
@@ -9107,7 +8923,7 @@ function ensureSession(t2, ctx) {
     const created = createNew(now, CST.ColdLaunch, scene);
     return { snapshot: created, isNew: true, cst: CST.ColdLaunch };
   }
-  if (t2 === "app_show") {
+  if (t === "app_show") {
     const enterCandidates = [];
     if (ctx.backgroundEnteredAt && ctx.backgroundEnteredAt > 0) {
       enterCandidates.push(ctx.backgroundEnteredAt);
@@ -9129,7 +8945,7 @@ function ensureSession(t2, ctx) {
       cached$2.bgTs = 0;
     return { snapshot: cached$2, isNew: false, cst: 0 };
   }
-  if (t2 === "wx_scene_changed") {
+  if (t === "wx_scene_changed") {
     if (scene && scene !== snap.lastScene) {
       const created = createNew(now, CST.BackgroundTimeout, scene);
       return { snapshot: created, isNew: true, cst: CST.BackgroundTimeout };
@@ -9258,14 +9074,14 @@ function getUni$7() {
 }
 function getPushClientId(opts = {}) {
   const { enabled: enabled2 = false, timeoutMs = 3e3 } = opts;
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     if (!enabled2) {
-      resolve2({ ok: false, cid: "", reason: "disabled" });
+      resolve({ ok: false, cid: "", reason: "disabled" });
       return;
     }
     const u = getUni$7();
     if (!u || typeof u.getPushClientId !== "function") {
-      resolve2({ ok: false, cid: "", reason: "unsupported" });
+      resolve({ ok: false, cid: "", reason: "unsupported" });
       return;
     }
     let settled = false;
@@ -9273,7 +9089,7 @@ function getPushClientId(opts = {}) {
       if (settled)
         return;
       settled = true;
-      resolve2(r);
+      resolve(r);
     };
     const timer = setTimeout(() => finish({ ok: false, cid: "", reason: "timeout" }), timeoutMs);
     tryRun(() => u.getPushClientId({
@@ -9429,7 +9245,7 @@ function handleLaunch(app, options = {}, opts = {}) {
       if (!c2)
         return;
       c2.report({ lt: LT.Push, cid: r.cid, t: nowSec() });
-    }).catch((e2) => logger.warn("[uni统计 2.0] push cid fetch failed", e2));
+    }).catch((e) => logger.warn("[uni统计 2.0] push cid fetch failed", e));
   }
 }
 function tryConsumeBackgroundResume(app, options = {}, _opts = {}, _from = "unknown") {
@@ -9472,7 +9288,7 @@ function tryConsumeBackgroundResume(app, options = {}, _opts = {}, _from = "unkn
   }
   reportNewSession(c, result.cst || CST.BackgroundTimeout, scene, now, false, url);
   markBackgroundResumeLt1Emitted(now);
-  void c.flush(true).catch((e2) => logger.warn("[uni统计 2.0] flush after new session (app_show) failed", e2));
+  void c.flush(true).catch((e) => logger.warn("[uni统计 2.0] flush after new session (app_show) failed", e));
   return true;
 }
 function handleAppShow(app, options = {}, opts = {}) {
@@ -9499,7 +9315,7 @@ function handleAppShow(app, options = {}, opts = {}) {
   }
   reportNewSession(c, result.cst || CST.BackgroundTimeout, scene, now, false, url);
   markBackgroundResumeLt1Emitted(now);
-  void c.flush(true).catch((e2) => logger.warn("[uni统计 2.0] flush after new session (app_show) failed", e2));
+  void c.flush(true).catch((e) => logger.warn("[uni统计 2.0] flush after new session (app_show) failed", e));
 }
 function handleAppHide(app, opts = {}) {
   if (state$1.pendingBackgroundResume)
@@ -9543,7 +9359,7 @@ function handleAppHide(app, opts = {}) {
     urlref: state$1.lastRoute,
     urlref_ts: stayed
   });
-  void c.flush(true).catch((e2) => logger.warn("[uni统计 2.0] flush on hide failed", e2));
+  void c.flush(true).catch((e) => logger.warn("[uni统计 2.0] flush on hide failed", e));
 }
 function handlePageShow(app, vm, opts = {}) {
   const c = safeCollector(app);
@@ -9608,7 +9424,7 @@ function handlePageShow(app, vm, opts = {}) {
   scheduleDeferredTitleSnapshot();
   state$1.isHide = false;
   if (result.isNew) {
-    void c.flush(true).catch((e2) => logger.warn("[uni统计 2.0] flush after new session (page_show) failed", e2));
+    void c.flush(true).catch((e) => logger.warn("[uni统计 2.0] flush after new session (page_show) failed", e));
   }
 }
 function handlePageHide(app, _vm) {
@@ -9628,14 +9444,14 @@ const rethrownErrors = typeof WeakSet === "function" ? /* @__PURE__ */ new WeakS
     add: () => rethrownErrors
   }
 );
-function handleError(app, e2) {
-  const isObj = typeof e2 === "object" && e2 !== null;
-  if (isObj && rethrownErrors.has(e2))
+function handleError(app, e) {
+  const isObj = typeof e === "object" && e !== null;
+  if (isObj && rethrownErrors.has(e))
     return;
   if (isObj)
-    rethrownErrors.add(e2);
+    rethrownErrors.add(e);
   try {
-    app.reportError(e2);
+    app.reportError(e);
   } catch (err) {
     logger.warn("[uni统计 2.0] handleError failed", err);
   }
@@ -9644,7 +9460,7 @@ function handleError(app, e2) {
   }
   tryRun(() => {
     setTimeout(() => {
-      throw e2;
+      throw e;
     }, 0);
   }, void 0);
 }
@@ -9675,7 +9491,7 @@ function tryBindUniAppLifecycle(app, opts = {}) {
   if (!u)
     return false;
   if (!uniAppHookRegistry.showBound && typeof u.onAppShow === "function") {
-    uniAppHookRegistry.appShowCb = (e2) => handleAppShow(app, e2 !== null && e2 !== void 0 ? e2 : {}, opts);
+    uniAppHookRegistry.appShowCb = (e) => handleAppShow(app, e !== null && e !== void 0 ? e : {}, opts);
     tryRun(() => u.onAppShow(uniAppHookRegistry.appShowCb), void 0);
     uniAppHookRegistry.showBound = true;
   }
@@ -9740,8 +9556,8 @@ function bindLifecycle(app, opts = {}) {
       }
       handlePageHide(app);
     },
-    onError(e2) {
-      handleError(app, e2);
+    onError(e) {
+      handleError(app, e);
     }
   };
   if (shouldBindUniAppLifecycle()) {
@@ -9815,8 +9631,8 @@ function createCloudChannel(opts = {}) {
       return void 0;
     try {
       return space.importObject(receiverName, { customUI: true });
-    } catch (e2) {
-      logger.warn("[uni统计 2.0] cloud importObject threw", e2);
+    } catch (e) {
+      logger.warn("[uni统计 2.0] cloud importObject threw", e);
       return void 0;
     }
   }
@@ -9843,9 +9659,9 @@ function createCloudChannel(opts = {}) {
             baseDelayMs: RETRY_BASE_DELAY_MS,
             sleep: opts.sleep
           });
-        } catch (e2) {
-          logger.warn("[uni统计 2.0] 统计上报失败（云函数已重试）", e2);
-          throw e2;
+        } catch (e) {
+          logger.warn("[uni统计 2.0] 统计上报失败（云函数已重试）", e);
+          throw e;
         }
       });
     }
@@ -9965,15 +9781,15 @@ function logRecoverItem(info) {
     logger.debug(`续传失败 (${info.index}/${info.total})：${describeError(info.error)}`);
   }
 }
-function describeError(e2) {
-  if (!e2)
+function describeError(e) {
+  if (!e)
     return "<无错误对象>";
-  if (e2 instanceof Error) {
-    return `${e2.name}: ${e2.message}`;
+  if (e instanceof Error) {
+    return `${e.name}: ${e.message}`;
   }
-  if (typeof e2 === "string")
-    return e2;
-  return safeStringify(e2) || String(e2);
+  if (typeof e === "string")
+    return e;
+  return safeStringify(e) || String(e);
 }
 function omitEmptyStringFieldsForUpload(data) {
   const out = {};
@@ -10027,10 +9843,10 @@ function chunkEvents(events, opts = {}) {
   let cur = [];
   let curBytes = 2;
   for (let i = 0; i < events.length; i++) {
-    const e2 = events[i];
+    const e = events[i];
     let s2 = "";
     try {
-      s2 = JSON.stringify(e2);
+      s2 = JSON.stringify(e);
     } catch (_c) {
       continue;
     }
@@ -10041,7 +9857,7 @@ function chunkEvents(events, opts = {}) {
       cur = [];
       curBytes = 2;
     }
-    cur.push(e2);
+    cur.push(e);
     curBytes += cur.length === 1 ? s2.length : s2.length + 1;
   }
   if (cur.length > 0)
@@ -10072,10 +9888,10 @@ function isPermanentChannelError(err) {
     return false;
   if (err instanceof PermanentChannelError)
     return true;
-  const e2 = err;
-  if (e2.name === "PermanentChannelError")
+  const e = err;
+  if (e.name === "PermanentChannelError")
     return true;
-  if (e2.permanent === true)
+  if (e.permanent === true)
     return true;
   return false;
 }
@@ -10100,16 +9916,16 @@ function createCollector(deps) {
       deferredFlushTimer = setTimeout(() => {
         deferredFlushTimer = null;
         firstFlushDone = true;
-        void flushImpl(false).catch((e2) => logger.warn("[uni统计 2.0] auto-flush failed", e2));
+        void flushImpl(false).catch((e) => logger.warn("[uni统计 2.0] auto-flush failed", e));
       }, deferMs);
       return;
     }
     firstFlushDone = true;
-    void flushImpl(false).catch((e2) => logger.warn("[uni统计 2.0] auto-flush failed", e2));
+    void flushImpl(false).catch((e) => logger.warn("[uni统计 2.0] auto-flush failed", e));
   }
   function report(input) {
     tryRun(() => {
-      const t2 = typeof input.t === "number" ? input.t : deps.nowSec();
+      const t = typeof input.t === "number" ? input.t : deps.nowSec();
       const snap = deps.session.getSnapshot();
       let sessionForCtx;
       if (snap) {
@@ -10117,10 +9933,10 @@ function createCollector(deps) {
         sessionForCtx = Object.assign({}, snap, { seq });
       }
       if (snap && input.lt === LT.Event && deps.session.touch) {
-        deps.session.touch(t2);
+        deps.session.touch(t);
       }
       const ctx = Object.assign({}, input, {
-        t: t2,
+        t,
         session: sessionForCtx
       });
       const data = deps.builder.build(ctx);
@@ -10183,22 +9999,22 @@ function createCollector(deps) {
         try {
           yield channel.send(payload);
           okEvents += sliceEvents;
-        } catch (e2) {
+        } catch (e) {
           allOk = false;
           if (i === 0)
             firstChunkOk = false;
           failedEvents += sliceEvents;
-          if (isPermanentChannelError(e2)) {
-            logger.warn("[uni统计 2.0] 统计上报失败（本批已丢弃，不可重试）", e2, "sliceBytes=" + requests.length);
-            logReportFailureReason({ error: e2, persistedId: void 0 });
+          if (isPermanentChannelError(e)) {
+            logger.warn("[uni统计 2.0] 统计上报失败（本批已丢弃，不可重试）", e, "sliceBytes=" + requests.length);
+            logReportFailureReason({ error: e, persistedId: void 0 });
             continue;
           }
-          logger.warn("[uni统计 2.0] 统计上报失败（已暂存，下次启动自动重试）", e2);
+          logger.warn("[uni统计 2.0] 统计上报失败（已暂存，下次启动自动重试）", e);
           const id = deps.retry.persist(payload);
           if (!id) {
             logger.warn("[uni统计 2.0] 统计暂存重试失败（无 retryId），本批已丢弃");
           }
-          logReportFailureReason({ error: e2, persistedId: id });
+          logReportFailureReason({ error: e, persistedId: id });
         }
       }
       const visitAccepted = hasLaunch ? firstChunkOk : allOk;
@@ -10247,30 +10063,30 @@ function createCollector(deps) {
             payloadId: payload._id,
             ok: true
           });
-        } catch (e2) {
-          if (isPermanentChannelError(e2)) {
+        } catch (e) {
+          if (isPermanentChannelError(e)) {
             if (payload._id)
               deps.retry.ack(payload._id);
-            logger.warn("[uni统计 2.0] 续传重试失败（不可重试，已从队列移除）", e2, "id=" + payload._id);
+            logger.warn("[uni统计 2.0] 续传重试失败（不可重试，已从队列移除）", e, "id=" + payload._id);
             logRecoverItem({
               index: i,
               total: items.length,
               payloadId: payload._id,
               ok: false,
-              error: e2
+              error: e
             });
             continue;
           }
           if (payload._id && deps.retry.markAttempt) {
             deps.retry.markAttempt(payload._id);
           }
-          logger.warn("[uni统计 2.0] 续传重试失败（保留队列，下次启动再试）", e2);
+          logger.warn("[uni统计 2.0] 续传重试失败（保留队列，下次启动再试）", e);
           logRecoverItem({
             index: i,
             total: items.length,
             payloadId: payload._id,
             ok: false,
-            error: e2
+            error: e
           });
         }
       }
@@ -10326,7 +10142,7 @@ function createHttpChannel(opts = {}) {
     if (!u || typeof u.request !== "function") {
       return Promise.reject(new Error("uni.request unavailable"));
     }
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled)
@@ -10347,16 +10163,16 @@ function createHttpChannel(opts = {}) {
           clearTimeout(timer);
           const code = (_a2 = res === null || res === void 0 ? void 0 : res.statusCode) !== null && _a2 !== void 0 ? _a2 : 0;
           if (code >= 200 && code < 300)
-            resolve2();
+            resolve();
           else
             reject(new Error("http status " + code));
         },
-        fail: (e2) => {
+        fail: (e) => {
           if (settled)
             return;
           settled = true;
           clearTimeout(timer);
-          reject(e2 instanceof Error ? e2 : new Error(String(e2)));
+          reject(e instanceof Error ? e : new Error(String(e)));
         }
       });
     });
@@ -10375,9 +10191,9 @@ function createHttpChannel(opts = {}) {
             baseDelayMs: RETRY_BASE_DELAY_MS,
             sleep: opts.sleep
           });
-        } catch (e2) {
-          logger.warn("[uni统计 2.0] 统计上报失败（HTTP 已重试）", e2);
-          throw e2;
+        } catch (e) {
+          logger.warn("[uni统计 2.0] 统计上报失败（HTTP 已重试）", e);
+          throw e;
         }
       });
     }
@@ -10393,10 +10209,10 @@ const REPORT_URL_BASE_OVERHEAD = 256;
 const REPORT_ENCODE_RATIO = 3;
 function buildStatReportUrl(payload, opts) {
   var _a;
-  const t2 = ((_a = opts.nowMs) !== null && _a !== void 0 ? _a : () => Date.now())();
+  const t = ((_a = opts.nowMs) !== null && _a !== void 0 ? _a : () => Date.now())();
   const logs = encodeURIComponent(payload.requests);
   const host2 = opts.host.replace(/\/+$/, "");
-  return host2 + opts.path + "?ProjectId=" + encodeURIComponent(opts.projectId) + "&TopicId=" + encodeURIComponent(opts.topicId) + "&Logs=" + logs + "&Source=webImg&Time=" + t2;
+  return host2 + opts.path + "?ProjectId=" + encodeURIComponent(opts.projectId) + "&TopicId=" + encodeURIComponent(opts.topicId) + "&Logs=" + logs + "&Source=webImg&Time=" + t;
 }
 function summarizeHttpErrorBody(data, maxLen = 320) {
   if (data == null)
@@ -10416,7 +10232,7 @@ function imageBeaconAwait(url, ms) {
   if (typeof ImageCtor !== "function") {
     return Promise.reject(new PermanentChannelError("当前环境无法完成统计上报"));
   }
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (settled)
@@ -10430,14 +10246,14 @@ function imageBeaconAwait(url, ms) {
         return;
       settled = true;
       clearTimeout(timer);
-      resolve2();
+      resolve();
     };
     img.onerror = () => {
       if (settled)
         return;
       settled = true;
       clearTimeout(timer);
-      resolve2();
+      resolve();
     };
     img.src = url;
   });
@@ -10449,7 +10265,7 @@ function fetchBeaconAwait(url, ms) {
     return Promise.reject(new Error("fetch unavailable"));
   }
   const controller = typeof g.AbortController === "function" ? new g.AbortController() : void 0;
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (settled)
@@ -10470,16 +10286,16 @@ function fetchBeaconAwait(url, ms) {
       settled = true;
       clearTimeout(timer);
       if (res && res.ok) {
-        resolve2();
+        resolve();
         return;
       }
       reject(new Error("统计上报 HTTP " + (res ? res.status : 0)));
-    }, (e2) => {
+    }, (e) => {
       if (settled)
         return;
       settled = true;
       clearTimeout(timer);
-      reject(e2 instanceof Error ? e2 : new Error(String(e2)));
+      reject(e instanceof Error ? e : new Error(String(e)));
     });
   });
 }
@@ -10500,7 +10316,7 @@ function formatWxPreloadFail(err) {
   return new Error(String(err));
 }
 function mpWeixinPreloadAssetsBeaconAwait(url, ms, preload) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (settled)
@@ -10516,7 +10332,7 @@ function mpWeixinPreloadAssetsBeaconAwait(url, ms, preload) {
             return;
           settled = true;
           clearTimeout(timer);
-          resolve2();
+          resolve();
         },
         fail: (err) => {
           if (settled)
@@ -10526,12 +10342,12 @@ function mpWeixinPreloadAssetsBeaconAwait(url, ms, preload) {
           reject(formatWxPreloadFail(err));
         }
       });
-    } catch (e2) {
+    } catch (e) {
       if (settled)
         return;
       settled = true;
       clearTimeout(timer);
-      reject(e2 instanceof Error ? e2 : new Error(String(e2)));
+      reject(e instanceof Error ? e : new Error(String(e)));
     }
   });
 }
@@ -10581,7 +10397,7 @@ function createImageChannel(opts = {}) {
     if (!u || typeof u.request !== "function") {
       return Promise.reject(new PermanentChannelError("当前环境无法完成统计上报"));
     }
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled)
@@ -10601,18 +10417,18 @@ function createImageChannel(opts = {}) {
           clearTimeout(timer);
           const code = (_a2 = res === null || res === void 0 ? void 0 : res.statusCode) !== null && _a2 !== void 0 ? _a2 : 0;
           if (code >= 200 && code < 300) {
-            resolve2();
+            resolve();
             return;
           }
           const hint = summarizeHttpErrorBody(res === null || res === void 0 ? void 0 : res.data);
           reject(new Error(hint ? `统计上报 HTTP ${code}: ${hint}` : `统计上报 HTTP ${code}`));
         },
-        fail: (e2) => {
+        fail: (e) => {
           if (settled)
             return;
           settled = true;
           clearTimeout(timer);
-          reject(e2 instanceof Error ? e2 : new Error(String(e2)));
+          reject(e instanceof Error ? e : new Error(String(e)));
         }
       });
     });
@@ -10664,13 +10480,13 @@ function createImageChannel(opts = {}) {
             baseDelayMs: RETRY_BASE_DELAY_MS,
             sleep: opts.sleep
           });
-        } catch (e2) {
-          if (isPermanentChannelError(e2)) {
-            logger.warn("[uni统计 2.0] 统计上报失败（不可重试）", e2);
+        } catch (e) {
+          if (isPermanentChannelError(e)) {
+            logger.warn("[uni统计 2.0] 统计上报失败（不可重试）", e);
           } else {
-            logger.warn("[uni统计 2.0] 统计上报失败（已重试）", e2);
+            logger.warn("[uni统计 2.0] 统计上报失败（已重试）", e);
           }
-          throw e2;
+          throw e;
         }
       });
     }
@@ -10843,11 +10659,11 @@ function mergeWxHostSnapshots() {
 }
 function mergeSystemSnapshots(...parts) {
   const out = {};
-  for (const p2 of parts) {
-    if (!p2)
+  for (const p of parts) {
+    if (!p)
       continue;
-    for (const k of Object.keys(p2)) {
-      const v = p2[k];
+    for (const k of Object.keys(p)) {
+      const v = p[k];
       if (v !== void 0 && v !== null)
         out[k] = v;
     }
@@ -11421,8 +11237,8 @@ function persistBucket() {
   }
   try {
     storage.set(STORAGE_KEY$1, state.bucket);
-  } catch (e2) {
-    logger.warn("[uni统计 2.0] queue persist failed", e2);
+  } catch (e) {
+    logger.warn("[uni统计 2.0] queue persist failed", e);
   }
 }
 function restoreOnce() {
@@ -11454,8 +11270,8 @@ function enqueue(data) {
   let serialized = "";
   try {
     serialized = JSON.stringify(data);
-  } catch (e2) {
-    logger.warn("[uni统计 2.0] enqueue dropped: stringify failed", e2);
+  } catch (e) {
+    logger.warn("[uni统计 2.0] enqueue dropped: stringify failed", e);
     return;
   }
   if (serialized.length > singleEventMaxBytes) {
@@ -11667,7 +11483,7 @@ class StatApp {
       this.uninstallInterceptors = tryRun(() => installAllInterceptors({ report: (i) => c.report(i) }), void 0);
     }
     if (!overrides.skipRecoverRetry) {
-      void this.collector.recoverRetry().catch((e2) => logger.warn("[uni统计 2.0] recoverRetry failed", e2));
+      void this.collector.recoverRetry().catch((e) => logger.warn("[uni统计 2.0] recoverRetry failed", e));
     }
     this.installed = true;
   }
@@ -11897,8 +11713,8 @@ function readManifestStatConfig() {
     if (typeof obj.ch === "string")
       cfg.ch = obj.ch;
     return Object.keys(cfg).length > 0 ? cfg : void 0;
-  } catch (e2) {
-    logger.warn("[uni统计 2.0] readManifestStatConfig failed", e2);
+  } catch (e) {
+    logger.warn("[uni统计 2.0] readManifestStatConfig failed", e);
     return void 0;
   }
 }
@@ -11907,10 +11723,10 @@ function normalizePositiveNumber(value) {
     return value > 0 ? value : void 0;
   }
   if (typeof value === "string") {
-    const t2 = value.trim();
-    if (t2 === "")
+    const t = value.trim();
+    if (t === "")
       return void 0;
-    const n2 = Number(t2);
+    const n2 = Number(t);
     if (Number.isFinite(n2) && n2 > 0)
       return n2;
   }
@@ -11921,10 +11737,10 @@ function normalizeNonNegativeNumber(value) {
     return value >= 0 ? value : void 0;
   }
   if (typeof value === "string") {
-    const t2 = value.trim();
-    if (t2 === "")
+    const t = value.trim();
+    if (t === "")
       return void 0;
-    const n2 = Number(t2);
+    const n2 = Number(t);
     if (Number.isFinite(n2) && n2 >= 0)
       return n2;
   }
@@ -12087,10 +11903,5 @@ function mountUniReport(app) {
 installPublicStat();
 exports._export_sfc = _export_sfc;
 exports.createSSRApp = createSSRApp;
-exports.e = e;
 exports.index = index;
-exports.o = o;
-exports.p = p;
-exports.resolveComponent = resolveComponent;
-exports.t = t;
 //# sourceMappingURL=../../.sourcemap/mp-weixin/common/vendor.js.map
